@@ -1,0 +1,23 @@
+# Dependencies
+node_modules/
+
+# Build output
+frontend/dist/
+frontend/.vite/
+
+# Environment files (contain secrets)
+backend/.env
+frontend/.env.local
+frontend/.env.*.local
+
+# Lock files (optional — keep if you want reproducible installs)
+# package-lock.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Claude Code internal
+.claude/

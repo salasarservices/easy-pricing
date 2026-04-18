@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
-
-const API = import.meta.env.VITE_API_URL || ''
+import { supabase } from './lib/supabase'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -219,12 +218,11 @@ export default function App() {
 
   // Fetch brands
   useEffect(() => {
-    fetch(`${API}/api/brands`)
-      .then((r) => r.json())
-      .then((data) => { setBrands(data); setBusy((b) => ({ ...b, brands: false })) })
-      .catch(() => {
+    supabase.from('brands').select('id, name').order('name')
+      .then(({ data, error: e }) => {
         setBusy((b) => ({ ...b, brands: false }))
-        setError('Could not load brands — is the API running?')
+        if (e) setError('Could not load brands — check Supabase config.')
+        else setBrands(data ?? [])
       })
   }, [])
 
@@ -234,10 +232,8 @@ export default function App() {
     setBusy((b) => ({ ...b, models: true }))
     setModels([]); setVariants([]); setVariant(null); setResults(null)
     setSel((s) => ({ ...s, modelId: '', variantId: '' }))
-    fetch(`${API}/api/models/${sel.brandId}`)
-      .then((r) => r.json())
-      .then((data) => { setModels(data); setBusy((b) => ({ ...b, models: false })) })
-      .catch(() => setBusy((b) => ({ ...b, models: false })))
+    supabase.from('models').select('id, name').eq('brand_id', sel.brandId).order('name')
+      .then(({ data }) => { setModels(data ?? []); setBusy((b) => ({ ...b, models: false })) })
   }, [sel.brandId])
 
   // Fetch variants on model change
@@ -246,10 +242,8 @@ export default function App() {
     setBusy((b) => ({ ...b, variants: true }))
     setVariants([]); setVariant(null); setResults(null)
     setSel((s) => ({ ...s, variantId: '' }))
-    fetch(`${API}/api/variants/${sel.modelId}`)
-      .then((r) => r.json())
-      .then((data) => { setVariants(data); setBusy((b) => ({ ...b, variants: false })) })
-      .catch(() => setBusy((b) => ({ ...b, variants: false })))
+    supabase.from('variants').select('*').eq('model_id', sel.modelId).order('name')
+      .then(({ data }) => { setVariants(data ?? []); setBusy((b) => ({ ...b, variants: false })) })
   }, [sel.modelId])
 
   function handleVariantChange(e) {
@@ -264,14 +258,23 @@ export default function App() {
     setBusy((b) => ({ ...b, calc: true }))
     setError(null)
     try {
-      const r = await fetch(`${API}/api/calculate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ variant_id: sel.variantId, purchase_date: sel.date }),
-      })
-      if (!r.ok) throw new Error('Calculation failed')
-      const data = await r.json()
-      setResults(data)
+      const days = Math.floor((Date.now() - new Date(sel.date).getTime()) / 86_400_000)
+      const { data, error: e } = await supabase
+        .from('tiers')
+        .select('price_inr, plans!inner(plan_name, plan_code, duration_months, max_kms, variant_id)')
+        .eq('plans.variant_id', sel.variantId)
+        .eq('is_active', true)
+        .lte('min_days', days)
+        .gte('max_days', days)
+        .order('price_inr', { ascending: true })
+      if (e) throw new Error(e.message)
+      setResults((data ?? []).map((row) => ({
+        plan_name: row.plans.plan_name,
+        plan_code: row.plans.plan_code,
+        duration_months: row.plans.duration_months,
+        max_kms: row.plans.max_kms,
+        price: parseFloat(row.price_inr),
+      })))
     } catch (err) {
       setError(err.message)
       setResults([])

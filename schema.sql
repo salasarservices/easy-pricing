@@ -54,6 +54,20 @@ CREATE TABLE IF NOT EXISTS tiers (
   UNIQUE (plan_id, min_days, max_days)
 );
 
+-- ── Row Level Security (required for Supabase anon key access) ───────────────
+
+ALTER TABLE brands   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE models   ENABLE ROW LEVEL SECURITY;
+ALTER TABLE variants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE plans    ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tiers    ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "public read" ON brands   FOR SELECT USING (true);
+CREATE POLICY "public read" ON models   FOR SELECT USING (true);
+CREATE POLICY "public read" ON variants FOR SELECT USING (true);
+CREATE POLICY "public read" ON plans    FOR SELECT USING (true);
+CREATE POLICY "public read" ON tiers    FOR SELECT USING (true);
+
 -- ── Indexes ──────────────────────────────────────────────────────────────────
 
 CREATE INDEX IF NOT EXISTS idx_models_brand     ON models(brand_id);

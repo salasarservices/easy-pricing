@@ -17,3 +17,9 @@ variables:
   SECRET_DETECTION_ENABLED: 'true'
 secret_detection:
   stage: secret-detection
+codex-review:
+  stage: test
+  image: node:18
+  script:
+    - npm install -g @openai/codex
+    - codex exec "review this codebase and suggest improvements"

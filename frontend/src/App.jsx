@@ -36,26 +36,26 @@ const FUEL_STYLES = {
 }
 
 // Car brand logos
+const BASE = 'https://ik.imagekit.io/salasarservices/easy-pricing'
 const BRAND_LOGOS = [
-  { name: 'Kia',           url: 'https://logo.clearbit.com/kia.com' },
-  { name: 'Tata',          url: 'https://logo.clearbit.com/tatamotors.com' },
-  { name: 'Hyundai',       url: 'https://logo.clearbit.com/hyundai.com' },
-  { name: 'Renault',       url: 'https://logo.clearbit.com/renault.com' },
-  { name: 'Maruti',        url: 'https://logo.clearbit.com/marutisuzuki.com' },
-  { name: 'Mahindra',      url: 'https://logo.clearbit.com/mahindra.com' },
-  { name: 'Citroen',       url: 'https://logo.clearbit.com/citroen.com' },
-  { name: 'Toyota',        url: 'https://logo.clearbit.com/toyota.com' },
-  { name: 'MG',            url: 'https://logo.clearbit.com/mgmotor.com' },
-  { name: 'VW',            url: 'https://logo.clearbit.com/volkswagen.com' },
-  { name: 'Skoda',         url: 'https://logo.clearbit.com/skoda-auto.com' },
-  { name: 'Jeep',          url: 'https://logo.clearbit.com/jeep.com' },
-  { name: 'Honda',         url: 'https://logo.clearbit.com/honda.com' },
-  { name: 'Mercedes',      url: 'https://logo.clearbit.com/mercedes-benz.com' },
-  { name: 'Audi',          url: 'https://logo.clearbit.com/audi.com' },
-  { name: 'BMW',           url: 'https://logo.clearbit.com/bmw.com' },
-  { name: 'MINI',          url: 'https://logo.clearbit.com/mini.com' },
-  { name: 'Jaguar',        url: 'https://logo.clearbit.com/jaguar.com' },
-  { name: 'Land Rover',    url: 'https://logo.clearbit.com/landrover.com' },
+  { name: 'Maruti',      url: `${BASE}/maruti.png` },
+  { name: 'Hyundai',     url: `${BASE}/hyundai.png` },
+  { name: 'Tata',        url: `${BASE}/tata.png` },
+  { name: 'Mahindra',    url: `${BASE}/mahindra.png` },
+  { name: 'Kia',         url: `${BASE}/Kia-Logo-PNG.png` },
+  { name: 'Toyota',      url: `${BASE}/toyota.png` },
+  { name: 'Honda',       url: `${BASE}/honda.png` },
+  { name: 'Renault',     url: `${BASE}/renault.png` },
+  { name: 'Skoda',       url: `${BASE}/skoda.png` },
+  { name: 'Volkswagen',  url: `${BASE}/volkswagen.webp` },
+  { name: 'Jeep',        url: `${BASE}/jeep.png` },
+  { name: 'Citroen',     url: `${BASE}/citroen.png` },
+  { name: 'MG',          url: `${BASE}/morris-garrage.jpg` },
+  { name: 'Mercedes',    url: `${BASE}/mercedes.webp` },
+  { name: 'BMW',         url: `${BASE}/bmw.jpg` },
+  { name: 'MINI',        url: `${BASE}/mini.jpg` },
+  { name: 'Jaguar',      url: `${BASE}/jaguar.png` },
+  { name: 'Land Rover',  url: `${BASE}/landrover.png` },
 ]
 
 // ── Sub-components ────────────────────────────────────────────────────────────
@@ -220,7 +220,7 @@ function BrandLogoStrip() {
       <p className="text-center text-slate-600 text-xs uppercase tracking-widest mb-4 font-semibold">
         Supported Brands
       </p>
-      <div className="flex flex-wrap justify-center gap-3">
+      <div className="flex flex-wrap justify-center gap-3.5">
         {BRAND_LOGOS.map((brand) => (
           <BrandLogo key={brand.name} brand={brand} />
         ))}
@@ -233,19 +233,19 @@ function BrandLogo({ brand }) {
   const [imgFailed, setImgFailed] = useState(false)
   return (
     <div className="group flex flex-col items-center gap-1.5 cursor-default">
-      <div className="w-10 h-10 bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.10] hover:border-white/20 rounded-xl flex items-center justify-center overflow-hidden transition-all duration-200 group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-blue-500/10">
+      <div className="w-14 h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden transition-all duration-200 group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-white/20 shadow-sm">
         {imgFailed ? (
-          <span className="text-slate-300 text-xs font-bold">{brand.name.slice(0, 2).toUpperCase()}</span>
+          <span className="text-slate-700 text-xs font-bold">{brand.name.slice(0, 2).toUpperCase()}</span>
         ) : (
           <img
             src={brand.url}
             alt={brand.name}
-            className="w-7 h-7 object-contain filter brightness-0 invert opacity-70 group-hover:opacity-100 transition-opacity"
+            className="w-12 h-8 object-contain p-0.5"
             onError={() => setImgFailed(true)}
           />
         )}
       </div>
-      <span className="text-[10px] text-slate-600 group-hover:text-slate-400 transition-colors font-medium">
+      <span className="text-[10px] text-slate-500 group-hover:text-slate-300 transition-colors font-medium">
         {brand.name}
       </span>
     </div>

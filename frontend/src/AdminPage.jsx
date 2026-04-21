@@ -212,6 +212,38 @@ export default function AdminPage({ onClose }) {
 
   // ── Render ──────────────────────────────────────────────────────────────────
 
+  // Service key not configured (e.g. Vercel env var missing)
+  if (!supabaseAdmin) {
+    return (
+      <div className="animate-fade-in space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-bold text-white tracking-tight">Data Management</h2>
+          <button onClick={onClose} className="text-xs text-slate-500 hover:text-slate-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5">
+            ← Back to Calculator
+          </button>
+        </div>
+        <div className="bg-amber-500/[0.10] border border-amber-400/30 rounded-2xl p-6 space-y-3">
+          <div className="flex items-center gap-2 text-amber-300 font-semibold">
+            <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+            </svg>
+            Service key not configured
+          </div>
+          <p className="text-slate-400 text-sm leading-relaxed">
+            The admin panel requires <code className="bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono text-amber-200">VITE_SUPABASE_SERVICE_KEY</code> to be set as an environment variable.
+          </p>
+          <div className="text-xs text-slate-500 space-y-1 bg-white/[0.04] rounded-xl p-4 font-mono">
+            <p className="text-slate-300 font-sans font-semibold text-xs mb-2">To fix on Vercel:</p>
+            <p>1. Go to your Vercel project → Settings → Environment Variables</p>
+            <p>2. Add: <span className="text-amber-300">VITE_SUPABASE_SERVICE_KEY</span></p>
+            <p>3. Value: copy from <span className="text-slate-400">backend/.env</span> → SUPABASE_SERVICE_KEY</p>
+            <p>4. Redeploy</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="animate-fade-in space-y-5">
 

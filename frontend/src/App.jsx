@@ -1,7 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { supabase } from './lib/supabase'
 import Login from './Login'
-import AdminPage from './AdminPage'
+
+// Lazy-load AdminPage so supabaseAdmin (service key) only initialises
+// when the admin panel is actually opened — not on every page load.
+const AdminPage = lazy(() => import('./AdminPage'))
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -408,7 +411,17 @@ function Dashboard({ onLogout }) {
       {/* ── Admin Panel ── */}
       {showAdmin && (
         <main className="max-w-lg mx-auto relative z-10 mb-10">
-          <AdminPage onClose={() => setShowAdmin(false)} />
+          <Suspense fallback={
+            <div className="flex items-center justify-center py-20 text-slate-500 text-sm gap-2">
+              <svg className="animate-spin w-4 h-4" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+              </svg>
+              Loading…
+            </div>
+          }>
+            <AdminPage onClose={() => setShowAdmin(false)} />
+          </Suspense>
         </main>
       )}
 

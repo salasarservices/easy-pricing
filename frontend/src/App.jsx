@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from './lib/supabase'
 import Login from './Login'
+import AdminPage from './AdminPage'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -265,6 +266,8 @@ export default function App() {
 }
 
 function Dashboard({ onLogout }) {
+  const [showAdmin, setShowAdmin] = useState(false)
+
   const [brands,   setBrands]   = useState([])
   const [models,   setModels]   = useState([])
   const [variants, setVariants] = useState([])
@@ -361,8 +364,24 @@ function Dashboard({ onLogout }) {
 
       {/* ── Header ── */}
       <header className="max-w-lg mx-auto mb-8 text-center animate-fade-in relative">
-        {/* Logout button */}
-        <div className="absolute right-0 top-0">
+        {/* Top-right actions */}
+        <div className="absolute right-0 top-0 flex items-center gap-1">
+          {/* Manage Data */}
+          <button
+            onClick={() => setShowAdmin((v) => !v)}
+            title="Manage Data"
+            className={`flex items-center gap-1.5 text-xs font-medium transition-colors px-3 py-1.5 rounded-lg
+              ${showAdmin
+                ? 'text-blue-300 bg-blue-500/20 hover:bg-blue-500/30'
+                : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            </svg>
+            {showAdmin ? 'Calculator' : 'Manage Data'}
+          </button>
+          {/* Sign out */}
           <button
             onClick={onLogout}
             className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5"
@@ -386,8 +405,15 @@ function Dashboard({ onLogout }) {
         </p>
       </header>
 
+      {/* ── Admin Panel ── */}
+      {showAdmin && (
+        <main className="max-w-lg mx-auto relative z-10 mb-10">
+          <AdminPage onClose={() => setShowAdmin(false)} />
+        </main>
+      )}
+
       {/* ── Form Card (Glassmorphism) ── */}
-      <main className="max-w-lg mx-auto relative z-10">
+      <main className={`max-w-lg mx-auto relative z-10 ${showAdmin ? 'hidden' : ''}`}>
         <div className="bg-white/[0.07] backdrop-blur-2xl border border-white/[0.12] rounded-2xl shadow-2xl overflow-hidden animate-slide-up">
 
           {/* Card header */}
@@ -571,7 +597,7 @@ function Dashboard({ onLogout }) {
       </main>
 
       {/* ── Brand Logos ── */}
-      <BrandLogoStrip />
+      {!showAdmin && <BrandLogoStrip />}
 
       {/* ── Footer ── */}
       <footer className="max-w-lg mx-auto mt-6 text-center">

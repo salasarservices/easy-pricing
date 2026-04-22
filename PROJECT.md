@@ -521,4 +521,34 @@ Full UI redesign:
 
 ---
 
+---
+
+### v1.6 — Mercedes DB Cleanup + CLA Data · `f0138da`
+
+**Bug fixed:** Old Python ingest had created plans with `plan_code = NULL` for CLA. Frontend groups plans by `plan_code` in a Map — all three NULL plans collapsed to one key → only 1 plan visible instead of 3.
+
+**Fix:** Script deleted all NULL-code duplicate plans across Mercedes variants. Affected: CLA (3 plans removed). Variant `CLA · N/A · N/A` updated to `CLA · Petrol · Automatic`.
+
+**CLA pricing seeded** (3 plans × 4 age tiers, plan codes `MB_CLA_P_AT_*`).
+
+**DB state discovered:** Full Mercedes lineup already exists from old Python ingest (GLA, GLC, GLE, GLS, S Class, Maybach, EQ series, A Limo, etc.) — all with `N/A` fuel/transmission and **zero plans**. Vehicle hierarchy is complete; only pricing data is missing.
+
+---
+
+## Next Session Trigger Point
+
+**Resume from:** "Continue populating pricing data for all brands."
+
+**Immediate next steps:**
+1. User to share master Excel (`Baja Motor Extended Warranty Retail Pricelist_2026.xlsx`) — 18 brand sheets
+2. Write brand-specific seed scripts (like `seed_mercedes.js`) for remaining brands
+3. Fix N/A fuel/transmission on all remaining Python-ingested variants once pricing is added
+
+**Key files to read first:**
+- `frontend/seed_mercedes.js` — template for all future seed scripts
+- `INGESTION_HANDOFF.md` — full breakdown of each brand's Excel sheet structure
+- `PROJECT.md §11` — complete change log
+
+**DB already has:** Mercedes-Benz (C Class, E Class, CLA) fully priced. Full vehicle hierarchy for 17+ brands with zero pricing.
+
 *Last updated: 2026-04-22*

@@ -167,13 +167,16 @@ function Spinner() {
 }
 
 function PlanCard({ plan, rank }) {
-  const isBest    = rank === 0
-  const isPremium = rank === 2
+  const isOptional = plan.is_optional
+  const isBest     = rank === 0 && !isOptional
+  const isPremium  = rank === 2 && !isOptional
 
   return (
     <div
       className={`relative rounded-xl border p-4 transition-all hover:shadow-lg animate-slide-up backdrop-blur-sm
-        ${isBest
+        ${isOptional
+          ? 'border-amber-400/[0.35] bg-amber-500/[0.07] hover:bg-amber-500/[0.12]'
+          : isBest
           ? 'border-blue-400/50 bg-blue-500/[0.18] shadow-blue-500/10'
           : 'border-white/[0.12] bg-white/[0.06] hover:bg-white/[0.10]'}`}
       style={{ animationDelay: `${rank * 60}ms` }}
@@ -189,19 +192,33 @@ function PlanCard({ plan, rank }) {
         </div>
       )}
 
+      {isOptional && (
+        <div className="absolute -top-3 left-4">
+          <span className="inline-flex items-center gap-1 bg-amber-600/90 text-white text-xs font-bold px-3 py-1 rounded-full shadow-md">
+            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" />
+            </svg>
+            Optional Coverage
+          </span>
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-4 mt-1">
         <div className="min-w-0">
-          <p className={`font-semibold text-sm leading-snug truncate ${isBest ? 'text-blue-200' : 'text-slate-200'}`}>
+          <p className={`font-semibold text-sm leading-snug truncate
+            ${isOptional ? 'text-amber-200' : isBest ? 'text-blue-200' : 'text-slate-200'}`}>
             {plan.plan_name}
           </p>
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
-            <span className={`inline-flex items-center gap-1 text-xs ${isBest ? 'text-blue-300' : 'text-slate-400'}`}>
+            <span className={`inline-flex items-center gap-1 text-xs
+              ${isOptional ? 'text-amber-300/80' : isBest ? 'text-blue-300' : 'text-slate-400'}`}>
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               {plan.duration_months} months
             </span>
-            <span className={`inline-flex items-center gap-1 text-xs ${isBest ? 'text-blue-300' : 'text-slate-400'}`}>
+            <span className={`inline-flex items-center gap-1 text-xs
+              ${isOptional ? 'text-amber-300/80' : isBest ? 'text-blue-300' : 'text-slate-400'}`}>
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
               </svg>
@@ -211,7 +228,8 @@ function PlanCard({ plan, rank }) {
         </div>
 
         <div className="text-right shrink-0">
-          <p className={`text-xl font-bold ${isBest ? 'text-blue-300' : isPremium ? 'text-slate-300' : 'text-emerald-400'}`}>
+          <p className={`text-xl font-bold
+            ${isOptional ? 'text-amber-300' : isBest ? 'text-blue-300' : isPremium ? 'text-slate-300' : 'text-emerald-400'}`}>
             {formatINR(plan.price)}
           </p>
           <p className="text-xs text-slate-500 mt-0.5">incl. GST</p>
@@ -426,22 +444,68 @@ function Dashboard({ onLogout }) {
     setError(null)
     try {
       const days = Math.floor((Date.now() - new Date(sel.date).getTime()) / 86_400_000)
+
+      // Fetch ALL active tiers for this variant — no age-window filter.
+      // We classify plans client-side so "optional / future" coverage
+      // (e.g. "4th Year Optional" for a 2-year-old car) also surfaces.
       const { data, error: e } = await supabase
         .from('tiers')
-        .select('price_inr, plans!inner(plan_name, plan_code, duration_months, max_kms, variant_id)')
+        .select('price_inr, min_days, max_days, plans!inner(plan_name, plan_code, duration_months, max_kms, variant_id)')
         .eq('plans.variant_id', sel.variantId)
         .eq('is_active', true)
-        .lte('min_days', days)
-        .gte('max_days', days)
-        .order('price_inr', { ascending: true })
+
       if (e) throw new Error(e.message)
-      setResults((data ?? []).map((row) => ({
-        plan_name:       row.plans.plan_name,
-        plan_code:       row.plans.plan_code,
-        duration_months: row.plans.duration_months,
-        max_kms:         row.plans.max_kms,
-        price:           parseFloat(row.price_inr),
-      })))
+
+      // Group rows by plan_code so we can pick the right tier per plan
+      const planMap = new Map()
+      for (const row of (data ?? [])) {
+        const key = row.plans.plan_code
+        if (!planMap.has(key)) {
+          planMap.set(key, {
+            plan_name:       row.plans.plan_name,
+            plan_code:       row.plans.plan_code,
+            duration_months: row.plans.duration_months,
+            max_kms:         row.plans.max_kms,
+            tiers:           [],
+          })
+        }
+        planMap.get(key).tiers.push({
+          min_days: row.min_days,
+          max_days: row.max_days,
+          price:    parseFloat(row.price_inr),
+        })
+      }
+
+      const currentPlans  = []
+      const optionalPlans = []
+
+      for (const [, plan] of planMap) {
+        const { tiers, ...info } = plan
+
+        // 1 — Tier that directly covers the vehicle's current age
+        const exact = tiers.find(t => t.min_days <= days && t.max_days >= days)
+        if (exact) {
+          currentPlans.push({ ...info, price: exact.price, is_optional: false })
+          continue
+        }
+
+        // 2 — No exact match: look for the earliest future-starting tier
+        //     (vehicle is still within OEM; coverage window hasn't opened yet)
+        const future = tiers
+          .filter(t => t.min_days > days)
+          .sort((a, b) => a.min_days - b.min_days)[0]
+        if (future) {
+          optionalPlans.push({ ...info, price: future.price, is_optional: true })
+        }
+        // If every tier has max_days < days the plan window is past — skip it
+      }
+
+      // Sort each group cheapest first
+      const byPrice = (a, b) => a.price - b.price
+      currentPlans.sort(byPrice)
+      optionalPlans.sort(byPrice)
+
+      setResults([...currentPlans, ...optionalPlans])
     } catch (err) {
       setError(err.message)
       setResults([])
@@ -699,33 +763,56 @@ function Dashboard({ onLogout }) {
                   No coverage plans found for the selected variant and purchase date.
                 </p>
               </div>
-            ) : (
-              <div className="bg-white/[0.07] backdrop-blur-2xl border border-white/[0.12] rounded-2xl shadow-2xl overflow-hidden">
-                <div className="bg-gradient-to-r from-emerald-700/70 to-emerald-600/70 backdrop-blur-sm px-6 py-4 flex items-center justify-between border-b border-white/[0.08]">
-                  <p className="text-emerald-100 text-xs font-semibold uppercase tracking-widest">
-                    Available Plans
-                  </p>
-                  <span className="bg-white/20 text-white text-xs font-bold px-3 py-1 rounded-full">
-                    {results.length} plan{results.length !== 1 ? 's' : ''} found
-                  </span>
-                </div>
-
-                <div className="p-4 space-y-3">
-                  {results.map((plan, i) => (
-                    <PlanCard key={i} plan={plan} rank={i} />
-                  ))}
-
-                  <div className="pt-2 pb-1 text-center space-y-0.5">
-                    <p className="text-xs text-slate-600">
-                      Prices sorted by value · Vehicle age: {age?.label}
+            ) : (() => {
+              const currentPlans  = results.filter(r => !r.is_optional)
+              const optionalPlans = results.filter(r =>  r.is_optional)
+              return (
+                <div className="bg-white/[0.07] backdrop-blur-2xl border border-white/[0.12] rounded-2xl shadow-2xl overflow-hidden">
+                  <div className="bg-gradient-to-r from-emerald-700/70 to-emerald-600/70 backdrop-blur-sm px-6 py-4 flex items-center justify-between border-b border-white/[0.08]">
+                    <p className="text-emerald-100 text-xs font-semibold uppercase tracking-widest">
+                      Available Plans
                     </p>
-                    <p className="text-xs text-slate-600">
-                      All amounts inclusive of GST
-                    </p>
+                    <span className="bg-white/20 text-white text-xs font-bold px-3 py-1 rounded-full">
+                      {results.length} plan{results.length !== 1 ? 's' : ''} found
+                    </span>
+                  </div>
+
+                  <div className="p-4 space-y-3">
+                    {/* ── Current-coverage plans ── */}
+                    {currentPlans.map((plan, i) => (
+                      <PlanCard key={plan.plan_code} plan={plan} rank={i} />
+                    ))}
+
+                    {/* ── Optional / future coverage section ── */}
+                    {optionalPlans.length > 0 && (
+                      <>
+                        {currentPlans.length > 0 && (
+                          <div className="flex items-center gap-2 pt-1">
+                            <div className="flex-1 h-px bg-amber-400/20" />
+                            <span className="text-[10px] text-amber-400/70 font-semibold uppercase tracking-widest whitespace-nowrap px-1">
+                              Optional Extended Coverage
+                            </span>
+                            <div className="flex-1 h-px bg-amber-400/20" />
+                          </div>
+                        )}
+                        {optionalPlans.map((plan, i) => (
+                          <PlanCard key={plan.plan_code} plan={plan} rank={i} />
+                        ))}
+                      </>
+                    )}
+
+                    <div className="pt-2 pb-1 text-center space-y-0.5">
+                      <p className="text-xs text-slate-600">
+                        Prices sorted by value · Vehicle age: {age?.label}
+                      </p>
+                      <p className="text-xs text-slate-600">
+                        All amounts inclusive of GST
+                      </p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              )
+            })()}
           </div>
         )}
       </main>

@@ -218,8 +218,11 @@ export default function AdminPage({ onClose }) {
       <div className="animate-fade-in space-y-5">
         <div className="flex items-center justify-between">
           <h2 className="text-xl font-bold text-white tracking-tight">Data Management</h2>
-          <button onClick={onClose} className="text-xs text-slate-500 hover:text-slate-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5">
-            ← Back to Calculator
+          <button onClick={onClose} className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border bg-white/[0.07] border-white/[0.12] text-slate-300 hover:bg-white/[0.13] hover:border-white/20 transition-all">
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to Calculator
           </button>
         </div>
         <div className="bg-amber-500/[0.10] border border-amber-400/30 rounded-2xl p-6 space-y-3">
@@ -255,10 +258,10 @@ export default function AdminPage({ onClose }) {
         </div>
         <button
           onClick={onClose}
-          className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5"
+          className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border bg-white/[0.07] border-white/[0.12] text-slate-300 hover:bg-white/[0.13] hover:border-white/20 transition-all"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+          <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18" />
           </svg>
           Back to Calculator
         </button>

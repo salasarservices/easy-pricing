@@ -237,14 +237,15 @@ function BrandLogo({ brand }) {
   const [imgFailed, setImgFailed] = useState(false)
   return (
     <div className="group flex flex-col items-center gap-1.5 cursor-default">
-      <div className="w-14 h-10 bg-white rounded-lg flex items-center justify-center overflow-hidden transition-all duration-200 group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-white/20 shadow-sm">
+      {/* Round white pill — no overflow-hidden so corners never clip the logo */}
+      <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center p-2.5 shadow-sm transition-all duration-200 group-hover:scale-110 group-hover:shadow-lg group-hover:shadow-white/25">
         {imgFailed ? (
-          <span className="text-slate-700 text-xs font-bold">{brand.name.slice(0, 2).toUpperCase()}</span>
+          <span className="text-slate-700 text-xs font-bold leading-none">{brand.name.slice(0, 2).toUpperCase()}</span>
         ) : (
           <img
             src={brand.url}
             alt={brand.name}
-            className="w-12 h-8 object-contain p-0.5"
+            className="w-full h-full object-contain"
             onError={() => setImgFailed(true)}
           />
         )}
@@ -368,38 +369,44 @@ function Dashboard({ onLogout }) {
       {/* ── Header ── */}
       <header className="max-w-lg mx-auto mb-8 animate-fade-in">
 
-        {/* Action bar — full row, no overlap */}
-        <div className="flex items-center justify-end gap-1 mb-5">
-          <button
-            onClick={() => setShowAdmin((v) => !v)}
-            className={`flex items-center gap-1.5 text-xs font-medium transition-colors px-3 py-1.5 rounded-lg
-              ${showAdmin
-                ? 'text-blue-300 bg-blue-500/20 hover:bg-blue-500/30'
-                : 'text-slate-500 hover:text-slate-300 hover:bg-white/5'}`}
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-            {showAdmin ? 'Calculator' : 'Manage Data'}
-          </button>
-          <button
-            onClick={onLogout}
-            className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-            </svg>
-            Sign out
-          </button>
+        {/* Badge + action buttons — same line */}
+        <div className="flex items-center justify-between mb-5">
+          <div className="inline-flex items-center gap-2 bg-white/[0.08] backdrop-blur-sm rounded-full px-4 py-1.5 text-blue-200 text-xs font-semibold ring-1 ring-white/10">
+            <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shrink-0" />
+            Extended Warranty Calculator
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Manage Data */}
+            <button
+              onClick={() => setShowAdmin((v) => !v)}
+              className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border transition-all
+                ${showAdmin
+                  ? 'bg-blue-500/20 border-blue-400/30 text-blue-300 hover:bg-blue-500/30'
+                  : 'bg-white/[0.07] border-white/[0.12] text-slate-300 hover:bg-white/[0.13] hover:border-white/20'}`}
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              {showAdmin ? 'Calculator' : 'Manage Data'}
+            </button>
+
+            {/* Sign out */}
+            <button
+              onClick={onLogout}
+              className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg border bg-white/[0.07] border-white/[0.12] text-slate-300 hover:bg-white/[0.13] hover:border-white/20 transition-all"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+              </svg>
+              Sign out
+            </button>
+          </div>
         </div>
 
         {/* Centred title block */}
         <div className="text-center">
-          <div className="inline-flex items-center gap-2 bg-white/[0.08] backdrop-blur-sm rounded-full px-4 py-1.5 text-blue-200 text-xs font-semibold mb-4 ring-1 ring-white/10">
-            <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-            Salasar Services · Extended Warranty
-          </div>
           <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight mb-2">
             Find Your Coverage Plan
           </h1>

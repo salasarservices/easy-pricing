@@ -257,20 +257,58 @@ function BrandLogo({ brand }) {
   )
 }
 
+// ── Session helpers ───────────────────────────────────────────────────────────
+
+const AUTH_KEY     = 'ew_auth'
+const ACTIVE_KEY   = 'ew_last_active'
+const INACTIVITY_MS = 40 * 60 * 1000   // 40 minutes
+const WARN_MS       = 38 * 60 * 1000   // warn banner at 38 minutes
+
+function readSession() {
+  try {
+    if (localStorage.getItem(AUTH_KEY) !== '1') return false
+    const last = parseInt(localStorage.getItem(ACTIVE_KEY) ?? '0', 10)
+    return (Date.now() - last) < INACTIVITY_MS
+  } catch { return false }
+}
+
+function saveSession()  {
+  localStorage.setItem(AUTH_KEY,   '1')
+  localStorage.setItem(ACTIVE_KEY, Date.now().toString())
+}
+
+function clearSession() {
+  localStorage.removeItem(AUTH_KEY)
+  localStorage.removeItem(ACTIVE_KEY)
+}
+
+function touchSession() {
+  if (localStorage.getItem(AUTH_KEY) === '1')
+    localStorage.setItem(ACTIVE_KEY, Date.now().toString())
+}
+
 // ── Main App ──────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [loggedIn, setLoggedIn] = useState(false)
+  const [loggedIn, setLoggedIn] = useState(() => readSession())
 
-  if (!loggedIn) {
-    return <Login onLogin={() => setLoggedIn(true)} />
+  function handleLogin() {
+    saveSession()
+    setLoggedIn(true)
   }
 
-  return <Dashboard onLogout={() => setLoggedIn(false)} />
+  function handleLogout() {
+    clearSession()
+    setLoggedIn(false)
+  }
+
+  if (!loggedIn) return <Login onLogin={handleLogin} />
+  return <Dashboard onLogout={handleLogout} />
 }
 
 function Dashboard({ onLogout }) {
-  const [showAdmin, setShowAdmin] = useState(false)
+  const [showAdmin,     setShowAdmin]     = useState(false)
+  const [warnExpiry,    setWarnExpiry]    = useState(false)
 
   const [brands,   setBrands]   = useState([])
   const [models,   setModels]   = useState([])
@@ -284,6 +322,27 @@ function Dashboard({ onLogout }) {
     brands: true, models: false, variants: false, calc: false,
   })
   const [error, setError] = useState(null)
+
+  // ── Inactivity tracker ────────────────────────────────────────────────────
+  useEffect(() => {
+    const EVENTS = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart']
+    const onActivity = () => { touchSession(); setWarnExpiry(false) }
+    EVENTS.forEach((e) => window.addEventListener(e, onActivity, { passive: true }))
+
+    const timer = setInterval(() => {
+      try {
+        const last    = parseInt(localStorage.getItem(ACTIVE_KEY) ?? '0', 10)
+        const elapsed = Date.now() - last
+        if (elapsed >= INACTIVITY_MS) { onLogout(); return }
+        setWarnExpiry(elapsed >= WARN_MS)
+      } catch { onLogout() }
+    }, 30_000) // check every 30 s
+
+    return () => {
+      EVENTS.forEach((e) => window.removeEventListener(e, onActivity))
+      clearInterval(timer)
+    }
+  }, [onLogout])
 
   const age      = getVehicleAge(sel.date)
   const today    = new Date().toISOString().split('T')[0]
@@ -365,6 +424,18 @@ function Dashboard({ onLogout }) {
       <div className="fixed top-[-250px] left-[-250px] w-[700px] h-[700px] rounded-full bg-blue-700/15 blur-3xl pointer-events-none" />
       <div className="fixed bottom-[-250px] right-[-250px] w-[700px] h-[700px] rounded-full bg-indigo-800/15 blur-3xl pointer-events-none" />
       <div className="fixed top-1/3 right-0 w-[400px] h-[400px] rounded-full bg-blue-900/20 blur-3xl pointer-events-none" />
+
+      {/* ── Inactivity warning banner ── */}
+      {warnExpiry && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 animate-fade-in">
+          <div className="flex items-center gap-3 bg-amber-500/20 backdrop-blur-xl border border-amber-400/40 text-amber-200 text-xs font-medium px-4 py-2.5 rounded-full shadow-xl">
+            <svg className="w-3.5 h-3.5 shrink-0 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            Session expiring soon due to inactivity — move your mouse to stay signed in
+          </div>
+        </div>
+      )}
 
       {/* ── Header ── */}
       <header className="max-w-lg mx-auto mb-8 animate-fade-in">

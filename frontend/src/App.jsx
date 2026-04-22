@@ -366,13 +366,12 @@ function Dashboard({ onLogout }) {
       <div className="fixed top-1/3 right-0 w-[400px] h-[400px] rounded-full bg-blue-900/20 blur-3xl pointer-events-none" />
 
       {/* ── Header ── */}
-      <header className="max-w-lg mx-auto mb-8 text-center animate-fade-in relative">
-        {/* Top-right actions */}
-        <div className="absolute right-0 top-0 flex items-center gap-1">
-          {/* Manage Data */}
+      <header className="max-w-lg mx-auto mb-8 animate-fade-in">
+
+        {/* Action bar — full row, no overlap */}
+        <div className="flex items-center justify-end gap-1 mb-5">
           <button
             onClick={() => setShowAdmin((v) => !v)}
-            title="Manage Data"
             className={`flex items-center gap-1.5 text-xs font-medium transition-colors px-3 py-1.5 rounded-lg
               ${showAdmin
                 ? 'text-blue-300 bg-blue-500/20 hover:bg-blue-500/30'
@@ -384,7 +383,6 @@ function Dashboard({ onLogout }) {
             </svg>
             {showAdmin ? 'Calculator' : 'Manage Data'}
           </button>
-          {/* Sign out */}
           <button
             onClick={onLogout}
             className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-slate-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-white/5"
@@ -396,16 +394,20 @@ function Dashboard({ onLogout }) {
           </button>
         </div>
 
-        <div className="inline-flex items-center gap-2 bg-white/[0.08] backdrop-blur-sm rounded-full px-4 py-1.5 text-blue-200 text-xs font-semibold mb-4 ring-1 ring-white/10">
-          <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
-          Salasar Services · Extended Warranty
+        {/* Centred title block */}
+        <div className="text-center">
+          <div className="inline-flex items-center gap-2 bg-white/[0.08] backdrop-blur-sm rounded-full px-4 py-1.5 text-blue-200 text-xs font-semibold mb-4 ring-1 ring-white/10">
+            <span className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
+            Salasar Services · Extended Warranty
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight mb-2">
+            Find Your Coverage Plan
+          </h1>
+          <p className="text-slate-400 text-sm">
+            Instant pricing across 17+ brands · All prices include GST
+          </p>
         </div>
-        <h1 className="text-3xl sm:text-4xl font-bold text-white tracking-tight mb-2">
-          Find Your Coverage Plan
-        </h1>
-        <p className="text-slate-400 text-sm">
-          Instant pricing across 17+ brands · All prices include GST
-        </p>
+
       </header>
 
       {/* ── Admin Panel ── */}

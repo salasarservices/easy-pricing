@@ -28,7 +28,7 @@ const getVehicleAge = (dateStr) => {
   return {
     days,
     label:    parts.length ? parts.join(' ') : 'Less than 1 month old',
-    eligible: days >= 0 && days <= 1095,
+    eligible: days >= 0,   // any past date from 2020 is allowed; DB returns 0 plans if no tier matches
   }
 }
 
@@ -381,7 +381,7 @@ function Dashboard({ onLogout }) {
 
   const age      = getVehicleAge(sel.date)
   const today    = new Date().toISOString().split('T')[0]
-  const minDate  = new Date(Date.now() - 1095 * 86_400_000).toISOString().split('T')[0]
+  const minDate  = '2020-01-01'   // allow purchase dates back to Jan 2020
   const canCalc  = sel.variantId && sel.date && age?.eligible && !busy.calc
 
   const currentStep = sel.brandId ? sel.modelId ? sel.variantId ? results !== null ? 4 : 3 : 2 : 1 : 0
@@ -656,9 +656,7 @@ function Dashboard({ onLogout }) {
                 <p className={`text-xs pl-8 transition-colors ${age.eligible ? 'text-slate-500' : 'text-red-400 font-medium'}`}>
                   {age.eligible
                     ? `Vehicle age: ${age.label} (${age.days} days since purchase)`
-                    : age.days < 0
-                    ? 'Date cannot be in the future'
-                    : 'Vehicle is over 3 years old — not eligible for extended warranty'}
+                    : 'Date cannot be in the future'}
                 </p>
               )}
             </div>

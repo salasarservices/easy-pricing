@@ -452,25 +452,6 @@ export default function AdminPage({ onClose }) {
         </div>
       </GlassCard>
 
-      {/* How it works */}
-      <GlassCard>
-        <div className="p-5">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">How the import works</p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {[
-              { label: 'New row',        desc: 'Brand / model / variant / plan not seen before → inserted automatically', color: 'text-emerald-400' },
-              { label: 'Changed price',  desc: 'Same Plan_Code + age range, different Price_INR → price updated in DB',   color: 'text-blue-400'    },
-              { label: 'Unchanged row',  desc: 'Everything matches what is already in DB → skipped (no DB write)',        color: 'text-slate-400'   },
-            ].map(({ label, desc, color }) => (
-              <div key={label} className="bg-white/[0.04] rounded-xl p-3.5 space-y-1">
-                <p className={`text-xs font-bold ${color}`}>{label}</p>
-                <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </GlassCard>
-
     </div>
   )
 }

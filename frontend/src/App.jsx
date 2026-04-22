@@ -1,4 +1,5 @@
-import { useState, useEffect, lazy, Suspense } from 'react'
+import { useState, useEffect, lazy, Suspense, forwardRef } from 'react'
+import DatePicker from 'react-datepicker'
 import { supabase } from './lib/supabase'
 import Login from './Login'
 
@@ -63,6 +64,40 @@ const BRAND_LOGOS = [
 ]
 
 // ── Sub-components ────────────────────────────────────────────────────────────
+
+// Custom input for react-datepicker — matches glassmorphism style
+const DateInput = forwardRef(({ value, onClick, disabled, isError, isFilled, placeholder }, ref) => (
+  <div className="relative">
+    <input
+      ref={ref}
+      type="text"
+      value={value || ''}
+      onClick={disabled ? undefined : onClick}
+      onChange={() => {}}
+      readOnly
+      disabled={disabled}
+      placeholder={placeholder || 'DD / MM / YYYY'}
+      className={`w-full rounded-xl border px-4 py-3 pr-11 text-sm outline-none transition-all
+        ${disabled
+          ? 'bg-white/[0.03] border-white/[0.08] text-slate-600 cursor-not-allowed'
+          : isError
+          ? 'bg-red-500/[0.12] border-red-400/40 text-red-300 ring-2 ring-red-400/20 cursor-pointer'
+          : isFilled
+          ? 'bg-slate-900/80 border-blue-400/60 text-white ring-2 ring-blue-400/20 cursor-pointer'
+          : 'bg-slate-900/70 border-white/20 text-white hover:border-white/30 cursor-pointer'}`}
+    />
+    <div className="pointer-events-none absolute inset-y-0 right-3.5 flex items-center">
+      <svg
+        className={`w-5 h-5 transition-colors ${disabled ? 'text-slate-700' : 'text-[#0eca2d]'}`}
+        fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}
+      >
+        <path strokeLinecap="round" strokeLinejoin="round"
+          d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+    </div>
+  </div>
+))
+DateInput.displayName = 'DateInput'
 
 function Badge({ label, styleKey }) {
   const cls = FUEL_STYLES[styleKey] ?? 'bg-white/10 text-slate-300 ring-white/20'
@@ -593,21 +628,29 @@ function Dashboard({ onLogout }) {
                 </span>
                 Purchase Date
               </label>
-              <input
-                type="date"
-                value={sel.date}
-                onChange={(e) => { setSel((s) => ({ ...s, date: e.target.value })); setResults(null) }}
-                min={minDate}
-                max={today}
+              <DatePicker
+                selected={sel.date ? new Date(sel.date + 'T00:00:00') : null}
+                onChange={(date) => {
+                  const str = date ? date.toLocaleDateString('en-CA') : ''
+                  setSel((s) => ({ ...s, date: str }))
+                  setResults(null)
+                }}
+                minDate={new Date(minDate + 'T00:00:00')}
+                maxDate={new Date(today + 'T00:00:00')}
                 disabled={!sel.variantId}
-                className={`w-full rounded-xl border px-4 py-3 text-sm outline-none transition-all
-                  ${!sel.variantId
-                    ? 'bg-white/[0.03] border-white/[0.08] text-slate-600 cursor-not-allowed'
-                    : sel.date && !age?.eligible
-                    ? 'bg-red-500/[0.12] border-red-400/40 text-red-300 ring-2 ring-red-400/20'
-                    : sel.date
-                    ? 'bg-slate-900/80 border-blue-400/60 text-white ring-2 ring-blue-400/20'
-                    : 'bg-slate-900/70 border-white/20 text-white hover:border-white/30 focus:border-blue-400/60 focus:ring-2 focus:ring-blue-400/20 cursor-pointer'}`}
+                dateFormat="dd / MM / yyyy"
+                showMonthDropdown
+                showYearDropdown
+                dropdownMode="select"
+                placeholderText="DD / MM / YYYY"
+                popperPlacement="bottom-start"
+                customInput={
+                  <DateInput
+                    disabled={!sel.variantId}
+                    isError={!!(sel.date && !age?.eligible)}
+                    isFilled={!!sel.date}
+                  />
+                }
               />
               {age && (
                 <p className={`text-xs pl-8 transition-colors ${age.eligible ? 'text-slate-500' : 'text-red-400 font-medium'}`}>

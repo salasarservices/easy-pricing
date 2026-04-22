@@ -384,7 +384,7 @@ function Dashboard({ onLogout }) {
   const minDate  = new Date(Date.now() - 1095 * 86_400_000).toISOString().split('T')[0]
   const canCalc  = sel.variantId && sel.date && age?.eligible && !busy.calc
 
-  const currentStep = sel.brandId ? sel.modelId ? sel.variantId ? 3 : 2 : 1 : 0
+  const currentStep = sel.brandId ? sel.modelId ? sel.variantId ? results !== null ? 4 : 3 : 2 : 1 : 0
 
   useEffect(() => {
     supabase.from('brands').select('id, name').order('name')

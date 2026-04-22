@@ -73,6 +73,15 @@ const E_CLASS_PRICES = [
   [239_422, 331_108, 365_446, 455_598],
 ]
 
+const CLA_PRICES = [
+  // 4th Year (Optional)
+  [ 54_988,  74_576,  82_128, 102_188],
+  // 4th + 5th Year (Optional)
+  [107_380, 146_084, 161_070, 200_600],
+  // 4th + 5th + 6th Year (Optional)
+  [163_902, 226_088, 249_452, 310_576],
+]
+
 // ── Seed manifest ──────────────────────────────────────────────────────────────
 // Each entry → 1 model with N variants; every variant gets the same 3 plans × 4 tiers
 const SEED = [
@@ -95,6 +104,15 @@ const SEED = [
     prices:    E_CLASS_PRICES,
     variants: [
       { name: 'E Class', fuel: 'Petrol', transmission: 'Automatic', codePrefix: 'MB_E_P_AT' },
+    ],
+  },
+  {
+    brand:     'Mercedes-Benz',
+    model:     'CLA',
+    oemMonths: 36,
+    prices:    CLA_PRICES,
+    variants: [
+      { name: 'CLA', fuel: 'Petrol', transmission: 'Automatic', codePrefix: 'MB_CLA_P_AT' },
     ],
   },
 ]

@@ -10,36 +10,75 @@ Usage:
 Set SUPABASE_URL and SUPABASE_SERVICE_KEY in backend/.env before running.
 """
 
-import os, re, sys
+import os, re, sys, io, time, uuid as _uuid
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
 import openpyxl
-from supabase import create_client, Client
-from dotenv import load_dotenv
-
-load_dotenv()
 
 EXCEL_PATH = r"E:\OneDrive - Salasar Services Pvt. Ltd\Desktop\Baja Motor Extended Warranty  Retail Pricelist_2026.xlsx"
 
-SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()   # service_role key
+# ── SQL-generation mode (python ingest.py --sql) ──────────────────────────────
+SQL_MODE = "--sql" in sys.argv
+_SQL: list[str] = []
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    print("ERROR: Set SUPABASE_URL and SUPABASE_SERVICE_KEY in backend/.env")
-    sys.exit(1)
+def _q(s) -> str:
+    """Escape a value for SQL string literals."""
+    return str(s).replace("'", "''") if s is not None else "NULL"
 
-sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# ── Live-Supabase mode ────────────────────────────────────────────────────────
+if not SQL_MODE:
+    from supabase import create_client, Client
+    from dotenv import load_dotenv
+    load_dotenv()
+    SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip()
+    SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY", "").strip()
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        print("ERROR: Set SUPABASE_URL and SUPABASE_SERVICE_KEY in backend/.env")
+        sys.exit(1)
+    sb: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+def sb_execute(query, retries=6, delay=15):
+    """Execute a PostgREST query with retries for transient Supabase gateway errors."""
+    for attempt in range(retries):
+        try:
+            return query.execute()
+        except Exception as e:
+            msg = str(e)
+            if attempt < retries - 1 and any(c in msg for c in ("502", "520", "503", "504", "could not be generated")):
+                wait = delay * (attempt + 1)
+                print(f"  [retry {attempt+1}/{retries-1}] Supabase gateway error — waiting {wait}s…", flush=True)
+                time.sleep(wait)
+            else:
+                raise
 
 # ── Caches (avoid redundant DB round-trips) ────────────────────────────────────
 _brand_cache:   dict[str, str] = {}
 _model_cache:   dict[tuple, str] = {}
 _variant_cache: dict[tuple, str] = {}
 
+# ── Name-lookup maps used only in SQL_MODE (uuid → human name) ────────────────
+_brand_by_id:   dict[str, str]         = {}  # brand_uuid  → brand_name
+_model_by_id:   dict[str, tuple]       = {}  # model_uuid  → (brand_name, model_name)
+_variant_by_id: dict[str, tuple]       = {}  # variant_uuid→ (brand_name, model_name, variant_name)
+
+def _safe_int(v):
+    try: return int(v)
+    except (ValueError, TypeError): return None
+
 # ── DB helpers ─────────────────────────────────────────────────────────────────
 
 def get_or_create_brand(name: str) -> str:
     name = name.strip()
     if name not in _brand_cache:
-        res = sb.table("brands").upsert({"name": name}, on_conflict="name").execute()
-        _brand_cache[name] = res.data[0]["id"]
+        if SQL_MODE:
+            bid = str(_uuid.uuid4())
+            _brand_cache[name] = bid
+            _brand_by_id[bid] = name
+            # Use INSERT … ON CONFLICT DO NOTHING so existing brand rows are left intact.
+            # All child inserts use a SELECT subquery on brand name so the actual DB uuid is used.
+            _SQL.append(f"INSERT INTO brands (id, name) VALUES ('{bid}', '{_q(name)}') ON CONFLICT DO NOTHING;")
+        else:
+            res = sb_execute(sb.table("brands").upsert({"name": name}, on_conflict="name"))
+            _brand_cache[name] = res.data[0]["id"]
     return _brand_cache[name]
 
 
@@ -47,12 +86,24 @@ def get_or_create_model(brand_id: str, name: str) -> str:
     name = name.strip()
     key = (brand_id, name)
     if key not in _model_cache:
-        res = sb.table("models").select("id").eq("brand_id", brand_id).eq("name", name).execute()
-        if res.data:
-            _model_cache[key] = res.data[0]["id"]
+        if SQL_MODE:
+            mid = str(_uuid.uuid4())
+            _model_cache[key] = mid
+            brand_name = _brand_by_id[brand_id]
+            _model_by_id[mid] = (brand_name, name)
+            # Look up brand by NAME so it works whether the brand was just inserted or already existed
+            _SQL.append(
+                f"INSERT INTO models (id, brand_id, name) "
+                f"SELECT '{mid}', b.id, '{_q(name)}' FROM brands b WHERE b.name = '{_q(brand_name)}' "
+                f"ON CONFLICT DO NOTHING;"
+            )
         else:
-            r = sb.table("models").insert({"brand_id": brand_id, "name": name}).execute()
-            _model_cache[key] = r.data[0]["id"]
+            res = sb_execute(sb.table("models").select("id").eq("brand_id", brand_id).eq("name", name))
+            if res.data:
+                _model_cache[key] = res.data[0]["id"]
+            else:
+                r = sb_execute(sb.table("models").insert({"brand_id": brand_id, "name": name}))
+                _model_cache[key] = r.data[0]["id"]
     return _model_cache[key]
 
 
@@ -61,17 +112,33 @@ def get_or_create_variant(model_id: str, name: str, fuel: str,
     name = name.strip()
     key = (model_id, name)
     if key not in _variant_cache:
-        res = sb.table("variants").select("id").eq("model_id", model_id).eq("name", name).execute()
-        if res.data:
-            _variant_cache[key] = res.data[0]["id"]
+        if SQL_MODE:
+            vid = str(_uuid.uuid4())
+            _variant_cache[key] = vid
+            brand_name, model_name = _model_by_id[model_id]
+            _variant_by_id[vid] = (brand_name, model_name, name)
+            oem_m = _safe_int(oem_months)
+            oem_k = _safe_int(oem_kms)
+            _SQL.append(
+                f"INSERT INTO variants (id, model_id, name, fuel, transmission, oem_warranty_months, oem_warranty_kms) "
+                f"SELECT '{vid}', m.id, '{_q(name)}', '{_q(fuel)}', '{_q(transmission)}', "
+                f"{oem_m if oem_m is not None else 'NULL'}, {oem_k if oem_k is not None else 'NULL'} "
+                f"FROM models m JOIN brands b ON m.brand_id = b.id "
+                f"WHERE b.name = '{_q(brand_name)}' AND m.name = '{_q(model_name)}' "
+                f"ON CONFLICT DO NOTHING;"
+            )
         else:
-            r = sb.table("variants").insert({
-                "model_id": model_id, "name": name, "fuel": fuel,
-                "transmission": transmission,
-                "oem_warranty_months": int(oem_months) if oem_months else None,
-                "oem_warranty_kms":   int(oem_kms)   if oem_kms   else None,
-            }).execute()
-            _variant_cache[key] = r.data[0]["id"]
+            res = sb_execute(sb.table("variants").select("id").eq("model_id", model_id).eq("name", name))
+            if res.data:
+                _variant_cache[key] = res.data[0]["id"]
+            else:
+                r = sb_execute(sb.table("variants").insert({
+                    "model_id": model_id, "name": name, "fuel": fuel,
+                    "transmission": transmission,
+                    "oem_warranty_months": _safe_int(oem_months),
+                    "oem_warranty_kms":   _safe_int(oem_kms),
+                }))
+                _variant_cache[key] = r.data[0]["id"]
     return _variant_cache[key]
 
 
@@ -82,18 +149,61 @@ def insert_plan_with_tiers(variant_id: str, plan_name: str,
     valid = [(mn, mx, p) for mn, mx, p in tiers if p is not None and p > 0]
     if not valid:
         return
-    r = sb.table("plans").insert({
-        "variant_id":      variant_id,
-        "plan_name":       plan_name,
-        "duration_months": duration_months,
-        "max_kms":         int(max_kms) if max_kms else None,
-    }).execute()
-    plan_id = r.data[0]["id"]
-    sb.table("tiers").insert([
-        {"plan_id": plan_id, "min_days": mn, "max_days": mx,
-         "price_inr": round(p, 2), "is_active": True}
-        for mn, mx, p in valid
-    ]).execute()
+    if SQL_MODE:
+        pid = str(_uuid.uuid4())
+        max_k = int(max_kms) if max_kms else "NULL"
+        brand_name, model_name, variant_name = _variant_by_id[variant_id]
+        # Subselect variant by name chain — works with any existing uuid in the DB
+        v_sel = (
+            f"(SELECT v.id FROM variants v "
+            f"JOIN models m ON v.model_id = m.id "
+            f"JOIN brands b ON m.brand_id = b.id "
+            f"WHERE b.name = '{_q(brand_name)}' AND m.name = '{_q(model_name)}' AND v.name = '{_q(variant_name)}')"
+        )
+        _SQL.append(
+            f"INSERT INTO plans (id, variant_id, plan_name, duration_months, max_kms) "
+            f"SELECT '{pid}', {v_sel}, '{_q(plan_name)}', {duration_months}, {max_k} "
+            f"ON CONFLICT DO NOTHING;"
+        )
+        for mn, mx, p in valid:
+            # Look up the real plan_id by variant+plan_name+duration (handles pre-existing plans)
+            p_sel = (
+                f"(SELECT p.id FROM plans p WHERE p.variant_id = {v_sel} "
+                f"AND p.plan_name = '{_q(plan_name)}' AND p.duration_months = {duration_months})"
+            )
+            _SQL.append(
+                f"INSERT INTO tiers (plan_id, min_days, max_days, price_inr, is_active) "
+                f"SELECT {p_sel}, {mn}, {mx}, {round(p,2)}, TRUE "
+                f"ON CONFLICT DO NOTHING;"
+            )
+        return
+    # ── Live mode ──────────────────────────────────────────────────────────────
+    existing = sb_execute(
+        sb.table("plans")
+        .select("id")
+        .eq("variant_id", variant_id)
+        .eq("plan_name", plan_name)
+        .eq("duration_months", duration_months)
+    )
+    if existing.data:
+        plan_id = existing.data[0]["id"]
+    else:
+        r = sb_execute(sb.table("plans").insert({
+            "variant_id":      variant_id,
+            "plan_name":       plan_name,
+            "duration_months": duration_months,
+            "max_kms":         int(max_kms) if max_kms else None,
+        }))
+        plan_id = r.data[0]["id"]
+    for mn, mx, p in valid:
+        try:
+            sb_execute(sb.table("tiers").insert(
+                {"plan_id": plan_id, "min_days": mn, "max_days": mx,
+                 "price_inr": round(p, 2), "is_active": True}
+            ))
+        except Exception as e:
+            if "23505" not in str(e):
+                raise
 
 # ── Value helpers ──────────────────────────────────────────────────────────────
 
@@ -271,7 +381,7 @@ def ingest_tata(wb):
         cell1 = str(row[1]).strip() if row[1] is not None else ""
 
         # Model header (col B = "Days from Date of sale")
-        if "days from date of sale" in cell1.lower():
+        if "days from date of sale" in cell1.strip().lower():
             flush()
             cur_model = cell0
             cur_plan  = None
@@ -282,7 +392,16 @@ def ingest_tata(wb):
         if "additional" in cell0.lower() and ("year" in cell0.lower() or "yr" in cell0.lower()):
             cur_plan = tata_parse_plan(cell0)
             plan_meta[cur_plan[0]] = (cur_plan[1], cur_plan[2])
-            day_cols = None
+            # Day cols may be on the same row (col B/C/D) or a separate subsequent row
+            inline_days = []
+            for ci in range(1, len(row)):
+                v = str(row[ci]).strip().lower() if row[ci] is not None else ""
+                tr = TATA_DAYS.get(v)
+                if tr:
+                    inline_days.append((ci, tr[0], tr[1]))
+            if inline_days:
+                day_cols = inline_days
+            # else keep existing day_cols inherited from the previous plan section
             continue
 
         # Day column header row (contains day range strings in B/C/D)
@@ -1130,26 +1249,64 @@ def ingest_jlr(wb):
 # ══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
+    # Parse --only flag:  python ingest.py --only citroen,toyota,mg
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--only", default="", help="Comma-separated brand keys to run (default: all)")
+    ap.add_argument("--sql",  action="store_true")
+    args, _ = ap.parse_known_args()
+    only = {b.strip().lower() for b in args.only.split(",") if b.strip()}
+
+    def _run(key, fn):
+        if only and key not in only:
+            return
+        if SQL_MODE: _SQL.append(f"-- BRAND: {key}")
+        fn(wb)
+
     print(f"Loading workbook…")
     wb = openpyxl.load_workbook(EXCEL_PATH, read_only=True, data_only=True)
     print("Workbook loaded. Starting ingestion...\n")
 
-    ingest_kia(wb)
-    ingest_tata(wb)
-    ingest_hyundai(wb)
-    ingest_renault(wb)
-    ingest_maruti(wb)
-    ingest_mahindra(wb)
-    ingest_citroen(wb)
-    ingest_toyota(wb)
-    ingest_mg(wb)
-    ingest_vw(wb)
-    ingest_skoda(wb)
-    ingest_jeep(wb)
-    ingest_honda(wb)
-    ingest_mbi(wb)
-    ingest_audi(wb)
-    ingest_bmw(wb)
-    ingest_jlr(wb)
+    _run("kia",        lambda w: ingest_kia(w))
+    _run("tata",       lambda w: ingest_tata(w))
+    _run("hyundai",    lambda w: ingest_hyundai(w))
+    _run("renault",    lambda w: ingest_renault(w))
+    _run("maruti",     lambda w: ingest_maruti(w))
+    _run("mahindra",   lambda w: ingest_mahindra(w))
+    _run("citroen",    lambda w: ingest_citroen(w))
+    _run("toyota",     lambda w: ingest_toyota(w))
+    _run("mg",         lambda w: ingest_mg(w))
+    _run("vw",         lambda w: ingest_vw(w))
+    _run("skoda",      lambda w: ingest_skoda(w))
+    _run("jeep",       lambda w: ingest_jeep(w))
+    _run("honda",      lambda w: ingest_honda(w))
+    # mercedes-benz already seeded via seed_mercedes.js — skip
+    _run("audi",       lambda w: ingest_audi(w))
+    _run("bmw",        lambda w: ingest_bmw(w))
+    _run("jlr",        lambda w: ingest_jlr(w))
 
-    print("\n✅ All brands ingested successfully!")
+    if SQL_MODE:
+        import os as _os
+        sql_dir = r"E:\Easy P\backend\sql_parts"
+        _os.makedirs(sql_dir, exist_ok=True)
+        # Write one file per brand using the brand markers injected during ingestion
+        current_brand = "misc"
+        brand_lines: dict[str, list[str]] = {}
+        for line in _SQL:
+            if line.startswith("-- BRAND:"):
+                current_brand = line.split("-- BRAND:")[1].strip()
+                brand_lines.setdefault(current_brand, [])
+            else:
+                brand_lines.setdefault(current_brand, []).append(line)
+        for brand, lines in brand_lines.items():
+            safe = brand.replace("/", "_").replace(" ", "_")
+            path = _os.path.join(sql_dir, f"{safe}.sql")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(f"-- {brand} — paste into Supabase SQL Editor and Run\n\n")
+                f.write("\n".join(lines))
+                f.write("\n")
+            print(f"  {brand}: {len(lines):,} statements → {path}")
+        print(f"\n✅ {len(brand_lines)} SQL files written to {sql_dir}")
+        print("   Run each file one by one in Supabase SQL Editor")
+    else:
+        print("\n✅ All brands ingested successfully!")

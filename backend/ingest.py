@@ -1071,14 +1071,16 @@ MBI_PLANS = [
     ("4th, 5th & 6th Year / Unlimited Kms",    36, None),
 ]
 MBI_AGES = {
-    "0 - 6 months":  (0,   180),
-    "0-6 months":    (0,   180),
-    "6 - 12 months": (181, 365),
-    "6-12 months":   (181, 365),
-    "1 to 2 year":   (366, 730),
-    "1 to 2 years":  (366, 730),
-    "2 to 3 year":   (731, 1095),
-    "2 to 3 years":  (731, 1095),
+    # Entry Age is time AFTER 3-yr OEM warranty expires (OEM = 1095 days from purchase).
+    # So all ranges are offset by 1095 days from purchase date.
+    "0 - 6 months":  (1095, 1275),
+    "0-6 months":    (1095, 1275),
+    "6 - 12 months": (1276, 1460),
+    "6-12 months":   (1276, 1460),
+    "1 to 2 year":   (1461, 1825),
+    "1 to 2 years":  (1461, 1825),
+    "2 to 3 year":   (1826, 2190),
+    "2 to 3 years":  (1826, 2190),
 }
 
 
@@ -1280,7 +1282,7 @@ if __name__ == "__main__":
     _run("skoda",      lambda w: ingest_skoda(w))
     _run("jeep",       lambda w: ingest_jeep(w))
     _run("honda",      lambda w: ingest_honda(w))
-    # mercedes-benz already seeded via seed_mercedes.js — skip
+    _run("mbi",        lambda w: ingest_mbi(w))   # MB: re-seeded with correct post-OEM tier ranges
     _run("audi",       lambda w: ingest_audi(w))
     _run("bmw",        lambda w: ingest_bmw(w))
     _run("jlr",        lambda w: ingest_jlr(w))

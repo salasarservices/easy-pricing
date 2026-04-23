@@ -1,0 +1,1066 @@
+================================================================================
+                    EXTENDED WARRANTY PRICING CALCULATOR
+                         PROJECT DOCUMENTATION
+================================================================================
+
+PROJECT NAME: Baja Motor Extended Warranty Pricing Engine
+VERSION: 1.0.0
+STATUS: Production Ready
+LAST UPDATED: 2026
+
+================================================================================
+                              TABLE OF CONTENTS
+================================================================================
+
+1. Project Overview
+2. Technology Stack
+3. System Architecture
+4. Database Schema (Supabase)
+5. Data Normalization Rules
+6. Backend Setup (FastAPI + Python)
+7. Frontend Setup (React + Vite)
+8. API Documentation
+9. Deployment Instructions
+10. Environment Variables
+11. Data Ingestion Script
+12. Troubleshooting Guide
+
+================================================================================
+                            1. PROJECT OVERVIEW
+================================================================================
+
+A web-based calculator for determining Extended Warranty (EW) prices based on:
+- Vehicle Make (Brand)
+- Vehicle Model
+- Vehicle Variant
+- Purchase Date (to calculate vehicle age in days)
+
+The system normalizes disparate pricing structures from 17+ automotive brands
+into a unified API for consistent frontend consumption.
+
+SUPPORTED BRANDS:
+- Kia, Tata, Hyundai, Renault, Maruti, Mahindra, Citroen, Toyota
+- MG, Volkswagen, Skoda, Jeep, Honda, Mercedes-Benz (MBI), Audi, BMW, JLR
+
+================================================================================
+                            2. TECHNOLOGY STACK
+================================================================================
+
+COMPONENT          TECHNOLOGY                      HOSTING
+---------------------------------------------------------------------------
+Frontend           React 18 + Vite + Tailwind CSS  Vercel
+Backend            Python 3.11 + FastAPI           Render / Railway
+Database           PostgreSQL                      Supabase
+Version Control    Git                             GitLab
+CI/CD              GitLab CI + Vercel Auto         Automated
+
+================================================================================
+                          3. SYSTEM ARCHITECTURE
+================================================================================
+
+[User Browser]
+       |
+       v
+[Vercel Frontend] (React SPA)
+       |
+       v
+[FastAPI Backend] (Python REST API)
+       |
+       v
+[Supabase PostgreSQL] (Database)
+
+FLOW:
+1. User selects Brand → Frontend calls /api/brands
+2. User selects Model → Frontend calls /api/models/{brand_id}
+3. User selects Variant → Frontend calls /api/variants/{model_id}
+4. User enters Purchase Date → Frontend calls /api/calculate
+5. Backend calculates days_since_purchase and returns eligible plans
+
+================================================================================
+                       4. DATABASE SCHEMA (SUPABASE)
+================================================================================
+
+Run the following SQL in Supabase SQL Editor:
+
+-- Enable UUID extension
+CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
+
+-- 1. Brands (e.g., Maruti, BMW, Mercedes)
+CREATE TABLE brands (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT UNIQUE NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 2. Models (e.g., Swift, 3 Series, C-Class)
+CREATE TABLE models (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  brand_id UUID REFERENCES brands(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 3. Variants (e.g., VXI 1.2L, M Sport, AMG Line)
+CREATE TABLE variants (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  model_id UUID REFERENCES models(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  fuel TEXT, -- Petrol, Diesel, EV, CNG, Hybrid, PHEV
+  transmission TEXT, -- Manual, Automatic, AMT, CVT, DCA
+  oem_warranty_months INT,
+  oem_warranty_kms INT,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 4. Plans (e.g., 1 Year/20K kms, 4th Year/100K kms)
+CREATE TABLE plans (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  variant_id UUID REFERENCES variants(id) ON DELETE CASCADE,
+  plan_name TEXT NOT NULL,
+  plan_code TEXT UNIQUE,
+  duration_months INT,
+  max_kms INT, -- NULL for unlimited
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- 5. Tiers (Price based on vehicle age in days)
+CREATE TABLE tiers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  plan_id UUID REFERENCES plans(id) ON DELETE CASCADE,
+  min_days INT NOT NULL,
+  max_days INT NOT NULL,
+  price_inr DECIMAL(10,2) NOT NULL,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+
+-- PERFORMANCE INDEXES
+CREATE INDEX idx_models_brand ON models(brand_id);
+CREATE INDEX idx_variants_model ON variants(model_id);
+CREATE INDEX idx_plans_variant ON plans(variant_id);
+CREATE INDEX idx_tiers_plan ON tiers(plan_id);
+CREATE INDEX idx_tiers_days ON tiers(plan_id, min_days, max_days);
+
+-- ROW LEVEL SECURITY (RLS) - Public Read Only
+ALTER TABLE brands ENABLE ROW LEVEL SECURITY;
+ALTER TABLE models ENABLE ROW LEVEL SECURITY;
+ALTER TABLE variants ENABLE ROW LEVEL SECURITY;
+ALTER TABLE plans ENABLE ROW LEVEL SECURITY;
+ALTER TABLE tiers ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Public Read Brands" ON brands FOR SELECT USING (TRUE);
+CREATE POLICY "Public Read Models" ON models FOR SELECT USING (TRUE);
+CREATE POLICY "Public Read Variants" ON variants FOR SELECT USING (TRUE);
+CREATE POLICY "Public Read Plans" ON plans FOR SELECT USING (TRUE);
+CREATE POLICY "Public Read Tiers" ON tiers FOR SELECT USING (TRUE);
+
+================================================================================
+                       5. DATA NORMALIZATION RULES
+================================================================================
+
+The raw Excel data varies significantly by brand. All data must be transformed
+before insertion into the database.
+
+TIME WINDOW NORMALIZATION:
+---------------------------------------------------------------------------
+BRAND          RAW FORMAT           NORMALIZED (DAYS)     EXAMPLE
+---------------------------------------------------------------------------
+Kia            0-3 Months           0-90 days             4th Year/100K
+Kia            4-12 Months          91-365 days           4th & 5th/120K
+Kia            13-24 Months         366-730 days          Unlimited Kms
+Kia            25-34 Months         731-1020 days
+---------------------------------------------------------------------------
+Tata           0-90 Days            0-90 days             Add 1Y/100K
+Tata           91-180 Days          91-180 days           Add 2Y/125K
+Tata           Above 180 Days       181-1095 days         Unlimited Kms
+---------------------------------------------------------------------------
+Maruti         0-30 Days            0-30 days             12M/20K
+Maruti         31-365 Days          31-365 days           24M/40K
+Maruti         366-730 Days         366-730 days          36M/60K
+Maruti         731-1095 Days        731-1095 days
+---------------------------------------------------------------------------
+Hyundai        0-90 Days            0-90 days             4th YR/80K
+Hyundai        91-365 Days          91-365 days           4th & 5th/100K
+Hyundai        366-1095 Days        366-1095 days         4th-7th/140K
+---------------------------------------------------------------------------
+Mahindra       Upto 60 Days         0-60 days             4th Year/120K
+Mahindra       60 Days - 2 Years    61-730 days           4th & 5th/150K
+Mahindra       2 Years - 3 Years    731-1095 days
+---------------------------------------------------------------------------
+Honda          0-60 Days            0-60 days             4th-5th/100K
+Honda          61-300 Days          61-300 days           4th-6th/125K
+Honda          301-540 Days         301-540 days
+Honda          541-730 Days         541-730 days
+Honda          731-910 Days         731-910 days
+Honda          911-1095 Days        911-1095 days
+---------------------------------------------------------------------------
+BMW/Merc/Audi  0-6 Months           0-180 days            3rd Year/UNL
+BMW/Merc/Audi  6-12 Months          181-365 days          4th Year/UNL
+BMW/Merc/Audi  1-2 Years            366-730 days          5th Year/UNL
+BMW/Merc/Audi  2-3 Years            731-1095 days
+---------------------------------------------------------------------------
+
+PLAN NAMING CONVENTION:
+---------------------------------------------------------------------------
+FORMAT: EXT_Y{Years}_K{Kms} or EXT_Y{Years}_KUNL
+EXAMPLES:
+- EXT_Y1_K20K     = 1 Year / 20,000 Kms
+- EXT_Y2_K100K    = 2 Years / 100,000 Kms
+- EXT_Y4_KUNL     = 4th Year / Unlimited Kms
+- EXT_Y4Y5_K150K  = 4th & 5th Year / 150,000 Kms
+---------------------------------------------------------------------------
+
+FUEL TYPE MAPPING:
+---------------------------------------------------------------------------
+RAW VALUE        NORMALIZED VALUE
+---------------------------------------------------------------------------
+P, Petrol        Petrol
+D, Diesel        Diesel
+CNG              CNG
+EV, B, BEV       EV
+PH, PHV, PHEV    Hybrid
+Mild hybrid      Hybrid
+---------------------------------------------------------------------------
+
+TRANSMISSION MAPPING:
+---------------------------------------------------------------------------
+RAW VALUE        NORMALIZED VALUE
+---------------------------------------------------------------------------
+M/T, MT, Manual  Manual
+A/T, AT, Auto    Automatic
+AMT              AMT
+CVT              CVT
+DCA              DCA
+AGS              AGS
+N/A              Unknown
+---------------------------------------------------------------------------
+
+MISSING DATA HANDLING:
+- "-" or "NA" or "NULL" → Store as NULL in database
+- UI will show "Not Eligible" for null prices
+- is_active = FALSE for unavailable tiers
+
+GST INFORMATION:
+- ALL prices in the Excel sheets are INCLUSIVE of GST
+- No additional tax calculation needed
+- Store currency = "INR", includes_gst = TRUE in metadata
+
+================================================================================
+                       6. BACKEND SETUP (FASTAPI + PYTHON)
+================================================================================
+
+DIRECTORY STRUCTURE:
+/backends
+  ├── main.py
+  ├── requirements.txt
+  ├── .env
+  └── utils/
+      ├── normalizer.py
+      └── calculator.py
+
+FILE: backend/requirements.txt
+---------------------------------------------------------------------------
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+supabase==2.0.3
+python-dotenv==1.0.0
+pydantic==2.5.0
+python-multipart==0.0.6
+---------------------------------------------------------------------------
+
+FILE: backend/.env
+---------------------------------------------------------------------------
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_KEY=your-anon-key
+PORT=8000
+CORS_ORIGINS=https://your-frontend.vercel.app
+---------------------------------------------------------------------------
+
+FILE: backend/main.py
+---------------------------------------------------------------------------
+import os
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from supabase import create_client, Client
+from datetime import datetime
+from dotenv import load_dotenv
+
+load_dotenv()
+
+app = FastAPI(title="EW Pricing API", version="1.0.0")
+
+# CORS Configuration
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Supabase Client
+sb: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_KEY")
+)
+
+# Request/Response Models
+class CalculateRequest(BaseModel):
+    variant_id: str
+    purchase_date: str  # YYYY-MM-DD
+
+class TierResponse(BaseModel):
+    plan_name: str
+    duration_months: int
+    max_kms: int
+    price: float
+    min_days: int
+    max_days: int
+
+# API Endpoints
+@app.get("/api/brands")
+async def get_brands():
+    """Get all brands"""
+    response = sb.table("brands").select("id, name").order("name").execute()
+    return response.data
+
+@app.get("/api/models/{brand_id}")
+async def get_models(brand_id: str):
+    """Get models by brand ID"""
+    response = sb.table("models").select("id, name").eq("brand_id", brand_id).order("name").execute()
+    return response.data
+
+@app.get("/api/variants/{model_id}")
+async def get_variants(model_id: str):
+    """Get variants by model ID"""
+    response = sb.table("variants").select(
+        "id, name, fuel, transmission, oem_warranty_months, oem_warranty_kms"
+    ).eq("model_id", model_id).order("name").execute()
+    return response.data
+
+@app.post("/api/calculate", response_model=list[TierResponse])
+async def calculate_price(req: CalculateRequest):
+    """Calculate EW prices based on variant and purchase date"""
+    
+    # Calculate days since purchase
+    try:
+        purchase_dt = datetime.strptime(req.purchase_date, "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format. Use YYYY-MM-DD")
+    
+    days_since = (datetime.now() - purchase_dt).days
+    
+    if days_since < 0:
+        raise HTTPException(status_code=400, detail="Purchase date cannot be in the future")
+    
+    if days_since > 1095:  # More than 3 years
+        return []  # No plans available
+    
+    # Get all plans for this variant with their tiers
+    response = sb.table("plans").select("""
+        id,
+        plan_name,
+        duration_months,
+        max_kms,
+        tiers (
+            id,
+            min_days,
+            max_days,
+            price_inr,
+            is_active
+        )
+    """).eq("variant_id", req.variant_id).execute()
+    
+    results = []
+    for plan in response.data:
+        for tier in plan.get("tiers", []):
+            if (tier["is_active"] and 
+                tier["min_days"] <= days_since <= tier["max_days"]):
+                results.append(TierResponse(
+                    plan_name=plan["plan_name"],
+                    duration_months=plan["duration_months"],
+                    max_kms=plan["max_kms"],
+                    price=float(tier["price_inr"]),
+                    min_days=tier["min_days"],
+                    max_days=tier["max_days"]
+                ))
+    
+    return results
+
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint"""
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
+# Run with: uvicorn main:app --host 0.0.0.0 --port $PORT
+---------------------------------------------------------------------------
+
+================================================================================
+                       7. FRONTEND SETUP (REACT + VITE)
+================================================================================
+
+DIRECTORY STRUCTURE:
+/frontend
+  ├── src/
+  │   ├── App.jsx
+  │   ├── components/
+  │   │   ├── BrandSelect.jsx
+  │   │   ├── ModelSelect.jsx
+  │   │   ├── VariantSelect.jsx
+  │   │   ├── DatePicker.jsx
+  │   │   └── PriceResults.jsx
+  │   ├── utils/
+  │   │   └── api.js
+  │   ├── index.css
+  │   └── main.jsx
+  ├── package.json
+  ├── vite.config.js
+  ├── tailwind.config.js
+  ├── .env.local
+  └── index.html
+
+FILE: frontend/package.json
+---------------------------------------------------------------------------
+{
+  "name": "ew-calculator",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.2.0",
+    "vite": "^5.0.0",
+    "tailwindcss": "^3.4.0",
+    "postcss": "^8.4.0",
+    "autoprefixer": "^10.4.0"
+  }
+}
+---------------------------------------------------------------------------
+
+FILE: frontend/.env.local
+---------------------------------------------------------------------------
+VITE_API_URL=https://your-backend-url.com
+---------------------------------------------------------------------------
+
+FILE: frontend/src/App.jsx
+---------------------------------------------------------------------------
+import { useState, useEffect, useMemo } from 'react';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+export default function App() {
+  const [brands, setBrands] = useState([]);
+  const [models, setModels] = useState([]);
+  const [variants, setVariants] = useState([]);
+  const [selected, setSelected] = useState({
+    brandId: '',
+    modelId: '',
+    variantId: '',
+    purchaseDate: ''
+  });
+  const [results, setResults] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  // Fetch brands on mount
+  useEffect(() => {
+    fetch(`${API_URL}/api/brands`)
+      .then(res => res.json())
+      .then(setBrands)
+      .catch(err => setError(err.message));
+  }, []);
+
+  // Fetch models when brand changes
+  useEffect(() => {
+    if (!selected.brandId) {
+      setModels([]);
+      setVariants([]);
+      return;
+    }
+    fetch(`${API_URL}/api/models/${selected.brandId}`)
+      .then(res => res.json())
+      .then(setModels)
+      .then(() => {
+        setSelected(s => ({ ...s, modelId: '', variantId: '' }));
+        setVariants([]);
+      })
+      .catch(err => setError(err.message));
+  }, [selected.brandId]);
+
+  // Fetch variants when model changes
+  useEffect(() => {
+    if (!selected.modelId) {
+      setVariants([]);
+      return;
+    }
+    fetch(`${API_URL}/api/variants/${selected.modelId}`)
+      .then(res => res.json())
+      .then(setVariants)
+      .then(() => setSelected(s => ({ ...s, variantId: '' })))
+      .catch(err => setError(err.message));
+  }, [selected.modelId]);
+
+  const handleCalculate = async () => {
+    if (!selected.variantId || !selected.purchaseDate) {
+      setError('Please select variant and purchase date');
+      return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const res = await fetch(`${API_URL}/api/calculate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          variant_id: selected.variantId,
+          purchase_date: selected.purchaseDate
+        })
+      });
+      
+      if (!res.ok) throw new Error('Calculation failed');
+      
+      const data = await res.json();
+      setResults(data);
+    } catch (err) {
+      setError(err.message);
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-md mx-auto bg-white rounded-lg shadow-lg p-6">
+        <h1 className="text-2xl font-bold text-gray-800 mb-6">
+          EW Price Calculator
+        </h1>
+        
+        {/* Brand Select */}
+        <select
+          className="w-full p-3 mb-4 border rounded-lg focus:ring-2 focus:ring-blue-500"
+          value={selected.brandId}
+          onChange={e => setSelected(s => ({ ...s, brandId: e.target.value }))}
+        >
+          <option value="">Select Brand</option>
+          {brands.map(b => (
+            <option key={b.id} value={b.id}>{b.name}</option>
+          ))}
+        </select>
+
+        {/* Model Select */}
+        <select
+          className="w-full p-3 mb-4 border rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+          value={selected.modelId}
+          onChange={e => setSelected(s => ({ ...s, modelId: e.target.value }))}
+          disabled={!selected.brandId}
+        >
+          <option value="">Select Model</option>
+          {models.map(m => (
+            <option key={m.id} value={m.id}>{m.name}</option>
+          ))}
+        </select>
+
+        {/* Variant Select */}
+        <select
+          className="w-full p-3 mb-4 border rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
+          value={selected.variantId}
+          onChange={e => setSelected(s => ({ ...s, variantId: e.target.value }))}
+          disabled={!selected.modelId}
+        >
+          <option value="">Select Variant</option>
+          {variants.map(v => (
+            <option key={v.id} value={v.id}>
+              {v.name} ({v.fuel}/{v.transmission})
+            </option>
+          ))}
+        </select>
+
+        {/* Purchase Date */}
+        <input
+          type="date"
+          className="w-full p-3 mb-4 border rounded-lg focus:ring-2 focus:ring-blue-500"
+          value={selected.purchaseDate}
+          onChange={e => setSelected(s => ({ ...s, purchaseDate: e.target.value }))}
+          max={new Date().toISOString().split('T')[0]}
+        />
+
+        {/* Calculate Button */}
+        <button
+          className="w-full bg-blue-600 text-white p-3 rounded-lg font-semibold
+                     hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={handleCalculate}
+          disabled={loading || !selected.variantId || !selected.purchaseDate}
+        >
+          {loading ? 'Calculating...' : 'Calculate Price'}
+        </button>
+
+        {/* Error Display */}
+        {error && (
+          <div className="mt-4 p-3 bg-red-50 text-red-600 rounded-lg text-sm">
+            {error}
+          </div>
+        )}
+
+        {/* Results Display */}
+        {results.length > 0 && (
+          <div className="mt-6 space-y-3">
+            <h2 className="font-semibold text-gray-700">Available Plans:</h2>
+            {results.map((r, i) => (
+              <div
+                key={i}
+                className="p-4 bg-gray-50 rounded-lg border-l-4 border-blue-500"
+              >
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className="font-medium">{r.plan_name}</p>
+                    <p className="text-sm text-gray-500">
+                      {r.duration_months} Months / {r.max_kms || 'Unlimited'} Kms
+                    </p>
+                  </div>
+                  <p className="text-xl font-bold text-blue-600">
+                    ₹ {r.price.toLocaleString('en-IN')}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {results.length === 0 && !loading && selected.variantId && (
+          <p className="mt-6 text-center text-gray-400 text-sm">
+            No plans available for selected date/variant
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+---------------------------------------------------------------------------
+
+FILE: frontend/tailwind.config.js
+---------------------------------------------------------------------------
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: [
+    "./index.html",
+    "./src/**/*.{js,ts,jsx,tsx}",
+  ],
+  theme: {
+    extend: {},
+  },
+  plugins: [],
+}
+---------------------------------------------------------------------------
+
+FILE: frontend/src/index.css
+---------------------------------------------------------------------------
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
+    Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+}
+---------------------------------------------------------------------------
+
+================================================================================
+                          8. API DOCUMENTATION
+================================================================================
+
+BASE URL: https://your-backend-url.com
+
+ENDPOINT: GET /api/brands
+---------------------------------------------------------------------------
+DESCRIPTION: Get all available brands
+RESPONSE: 200 OK
+[
+  { "id": "uuid", "name": "Maruti" },
+  { "id": "uuid", "name": "Hyundai" }
+]
+---------------------------------------------------------------------------
+
+ENDPOINT: GET /api/models/{brand_id}
+---------------------------------------------------------------------------
+DESCRIPTION: Get models for a specific brand
+PARAMS: brand_id (UUID)
+RESPONSE: 200 OK
+[
+  { "id": "uuid", "name": "Swift" },
+  { "id": "uuid", "name": "Baleno" }
+]
+---------------------------------------------------------------------------
+
+ENDPOINT: GET /api/variants/{model_id}
+---------------------------------------------------------------------------
+DESCRIPTION: Get variants for a specific model
+PARAMS: model_id (UUID)
+RESPONSE: 200 OK
+[
+  {
+    "id": "uuid",
+    "name": "VXI 1.2L 5MT",
+    "fuel": "Petrol",
+    "transmission": "Manual",
+    "oem_warranty_months": 36,
+    "oem_warranty_kms": 100000
+  }
+]
+---------------------------------------------------------------------------
+
+ENDPOINT: POST /api/calculate
+---------------------------------------------------------------------------
+DESCRIPTION: Calculate EW prices based on variant and purchase date
+REQUEST BODY:
+{
+  "variant_id": "uuid-string",
+  "purchase_date": "2023-01-15"
+}
+RESPONSE: 200 OK
+[
+  {
+    "plan_name": "4th Year / 100K Kms",
+    "duration_months": 12,
+    "max_kms": 100000,
+    "price": 12237.00,
+    "min_days": 0,
+    "max_days": 30
+  }
+]
+ERRORS:
+- 400: Invalid date format
+- 400: Purchase date in future
+- 404: Variant not found
+---------------------------------------------------------------------------
+
+ENDPOINT: GET /api/health
+---------------------------------------------------------------------------
+DESCRIPTION: Health check endpoint
+RESPONSE: 200 OK
+{ "status": "healthy", "timestamp": "2024-01-15T10:30:00Z" }
+---------------------------------------------------------------------------
+
+================================================================================
+                        9. DEPLOYMENT INSTRUCTIONS
+================================================================================
+
+STEP 1: DATABASE SETUP (SUPABASE)
+---------------------------------------------------------------------------
+1. Create account at https://supabase.com
+2. Create new project
+3. Go to SQL Editor
+4. Copy and run the Database Schema SQL from Section 4
+5. Enable Row Level Security (RLS) with public read policies
+6. Copy SUPABASE_URL and SUPABASE_KEY (anon key)
+---------------------------------------------------------------------------
+
+STEP 2: BACKEND DEPLOYMENT (RENDER/RAILWAY)
+---------------------------------------------------------------------------
+RENDER:
+1. Create new Web Service
+2. Connect GitLab repository
+3. Root Directory: backend/
+4. Build Command: pip install -r requirements.txt
+5. Start Command: uvicorn main:app --host 0.0.0.0 --port $PORT
+6. Add Environment Variables:
+   - SUPABASE_URL
+   - SUPABASE_KEY
+   - CORS_ORIGINS=https://your-frontend.vercel.app
+7. Deploy
+
+RAILWAY:
+1. Create new project
+2. Connect GitLab repository
+3. Set root directory to backend/
+4. Add same environment variables
+5. Deploy
+---------------------------------------------------------------------------
+
+STEP 3: FRONTEND DEPLOYMENT (VERCEL)
+---------------------------------------------------------------------------
+1. Install Vercel CLI: npm i -g vercel
+2. Login: vercel login
+3. Navigate to frontend directory
+4. Run: vercel
+5. Connect to GitLab repository
+6. Set Environment Variables:
+   - VITE_API_URL=https://your-backend-url.com
+7. Deploy
+8. Production URL will be: https://your-project.vercel.app
+---------------------------------------------------------------------------
+
+STEP 4: DATA INGESTION
+---------------------------------------------------------------------------
+1. Run the Python ingestion script (Section 11)
+2. Parse all 17 brand sheets from Excel
+3. Insert normalized data into Supabase tables
+4. Verify data in Supabase dashboard
+---------------------------------------------------------------------------
+
+================================================================================
+                        10. ENVIRONMENT VARIABLES
+================================================================================
+
+BACKEND (.env)
+---------------------------------------------------------------------------
+SUPABASE_URL=https://xxxxxxxxxxxxx.supabase.co
+SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+PORT=8000
+CORS_ORIGINS=https://your-frontend.vercel.app,http://localhost:5173
+---------------------------------------------------------------------------
+
+FRONTEND (.env.local)
+---------------------------------------------------------------------------
+VITE_API_URL=https://your-backend-url.com
+---------------------------------------------------------------------------
+
+GITLAB CI/CD VARIABLES (For automated deployments)
+---------------------------------------------------------------------------
+SUPABASE_URL
+SUPABASE_KEY
+VERCEL_TOKEN
+VERCEL_ORG_ID
+VERCEL_PROJECT_ID
+---------------------------------------------------------------------------
+
+================================================================================
+                       11. DATA INGESTION SCRIPT
+================================================================================
+
+FILE: scripts/ingest_data.py
+---------------------------------------------------------------------------
+import pandas as pd
+from supabase import create_client
+import os
+from dotenv import load_dotenv
+from datetime import datetime
+import uuid
+
+load_dotenv()
+
+sb = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+
+def normalize_days(window_str):
+    """Convert time windows to days"""
+    if not window_str or window_str == '-':
+        return None, None
+    
+    window_str = str(window_str).strip()
+    
+    # Handle months
+    if 'Month' in window_str:
+        parts = window_str.replace('Months', '').replace('Month', '').split('-')
+        start = int(parts[0].strip()) * 30
+        end = int(parts[1].strip()) * 30 if len(parts) > 1 else start + 30
+        return start, end
+    
+    # Handle days
+    if 'Day' in window_str or 'days' in window_str:
+        parts = window_str.replace(' Days', '').replace('days', '').replace('Day', '').split('-')
+        start = int(parts[0].strip())
+        end = int(parts[1].strip()) if len(parts) > 1 else 1095
+        return start, end
+    
+    return 0, 1095
+
+def parse_plan_name(plan_str):
+    """Extract duration and kms from plan name"""
+    if not plan_str:
+        return None, None, None
+    
+    # Extract years
+    years = 1
+    if 'Year' in plan_str:
+        import re
+        matches = re.findall(r'\d+', plan_str.split('/')[0])
+        if matches:
+            years = sum(int(m) for m in matches)
+    
+    # Extract kms
+    kms = None
+    if 'Unlimited' in plan_str or 'UNL' in plan_str.upper():
+        kms = None
+    else:
+        import re
+        matches = re.findall(r'\d+', plan_str.split('/')[-1])
+        if matches:
+            kms = int(matches[0]) * 1000  # Convert to full number
+    
+    duration_months = years * 12
+    return f"EXT_Y{years}_K{'UNL' if kms is None else f'{kms//1000}K'}", duration_months, kms
+
+def ingest_brand_sheet(df, brand_name):
+    """Ingest a single brand sheet"""
+    print(f"Processing {brand_name}...")
+    
+    # Insert brand
+    brand_res = sb.table("brands").upsert({
+        "name": brand_name
+    }, on_conflict="name").execute()
+    brand_id = brand_res.data[0]["id"]
+    
+    # Process each row
+    for _, row in df.iterrows():
+        # Extract variant info
+        variant_name = row.get('Variant', row.get('Model with GST', 'All Variants'))
+        fuel = row.get('Fuel', row.get('Fuel Type', 'Unknown'))
+        transmission = row.get('Transmission', row.get('Transmission Type', 'Unknown'))
+        
+        # Insert model (simplified - in production, parse from variant name)
+        model_name = variant_name.split()[0] if variant_name else 'Unknown'
+        model_res = sb.table("models").upsert({
+            "brand_id": brand_id,
+            "name": model_name
+        }, on_conflict=["brand_id", "name"]).execute()
+        model_id = model_res.data[0]["id"]
+        
+        # Insert variant
+        variant_res = sb.table("variants").upsert({
+            "model_id": model_id,
+            "name": variant_name,
+            "fuel": fuel,
+            "transmission": transmission
+        }, on_conflict=["model_id", "name"]).execute()
+        variant_id = variant_res.data[0]["id"]
+        
+        # Process each plan column
+        for col in df.columns:
+            if '/' in str(col) and 'Model' not in str(col):
+                plan_code, duration, kms = parse_plan_name(col)
+                if not plan_code:
+                    continue
+                
+                # Insert plan
+                plan_res = sb.table("plans").upsert({
+                    "variant_id": variant_id,
+                    "plan_name": col,
+                    "plan_code": plan_code,
+                    "duration_months": duration,
+                    "max_kms": kms
+                }, on_conflict=["variant_id", "plan_code"]).execute()
+                plan_id = plan_res.data[0]["id"]
+                
+                # Process each time window column
+                for w_col in df.columns:
+                    if w_col not in ['Variant', 'Model', 'Fuel', 'Transmission', col]:
+                        min_d, max_d = normalize_days(w_col)
+                        if min_d is None:
+                            continue
+                        
+                        price = row.get(w_col)
+                        if price and price != '-' and str(price).strip():
+                            try:
+                                price_val = float(str(price).replace(',', ''))
+                                sb.table("tiers").upsert({
+                                    "plan_id": plan_id,
+                                    "min_days": min_d,
+                                    "max_days": max_d,
+                                    "price_inr": price_val,
+                                    "is_active": True
+                                }, on_conflict=["plan_id", "min_days", "max_days"]).execute()
+                            except:
+                                continue
+    
+    print(f"Completed {brand_name}")
+
+# Main execution
+if __name__ == "__main__":
+    excel_file = "Baja_Motor_Extended_Warranty_Retail_Pricelist_2026.xlsx"
+    
+    # Load each sheet
+    xl = pd.ExcelFile(excel_file)
+    for sheet_name in xl.sheet_names:
+        df = pd.read_excel(excel_file, sheet_name=sheet_name)
+        ingest_brand_sheet(df, sheet_name)
+    
+    print("All data ingested successfully!")
+---------------------------------------------------------------------------
+
+================================================================================
+                        12. TROUBLESHOOTING GUIDE
+================================================================================
+
+ISSUE: Frontend shows "Network Error"
+---------------------------------------------------------------------------
+SOLUTION:
+1. Check VITE_API_URL in .env.local
+2. Verify backend is running and accessible
+3. Check CORS settings in backend
+4. Ensure backend URL is added to CORS_ORIGINS
+---------------------------------------------------------------------------
+
+ISSUE: No results returned from /api/calculate
+---------------------------------------------------------------------------
+SOLUTION:
+1. Verify purchase_date is within 3 years (1095 days)
+2. Check if tiers exist for the variant in database
+3. Verify days calculation is correct
+4. Check is_active flag on tiers
+---------------------------------------------------------------------------
+
+ISSUE: Supabase connection failed
+---------------------------------------------------------------------------
+SOLUTION:
+1. Verify SUPABASE_URL and SUPABASE_KEY are correct
+2. Check RLS policies allow read access
+3. Ensure tables exist in database
+4. Check Supabase project status
+---------------------------------------------------------------------------
+
+ISSUE: Vercel deployment fails
+---------------------------------------------------------------------------
+SOLUTION:
+1. Check Node.js version compatibility
+2. Verify all dependencies in package.json
+3. Check environment variables are set
+4. Review build logs in Vercel dashboard
+---------------------------------------------------------------------------
+
+ISSUE: Backend timeout on Render
+---------------------------------------------------------------------------
+SOLUTION:
+1. Increase timeout settings in Render dashboard
+2. Optimize database queries with indexes
+3. Consider upgrading to paid plan for longer timeouts
+4. Use connection pooling for Supabase
+---------------------------------------------------------------------------
+
+ISSUE: Data not showing in dropdowns
+---------------------------------------------------------------------------
+SOLUTION:
+1. Verify data ingestion script completed successfully
+2. Check Supabase dashboard for data
+3. Verify API endpoints return data
+4. Check browser console for errors
+---------------------------------------------------------------------------
+
+================================================================================
+                              SUPPORT & CONTACT
+================================================================================
+
+For issues or questions:
+- Check logs in Vercel/Render dashboards
+- Review Supabase logs for database errors
+- Test API endpoints with Postman/curl
+- Verify environment variables are set correctly
+
+PROJECT REPOSITORY: GitLab
+FRONTEND HOSTING: Vercel
+BACKEND HOSTING: Render/Railway
+DATABASE: Supabase
+
+================================================================================
+                                 END OF FILE
+================================================================================
